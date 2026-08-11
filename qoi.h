@@ -95,19 +95,20 @@ bool QoiEncode(uint32_t width, uint32_t height, uint8_t channels, uint8_t colors
 
             // Check for QOI_OP_INDEX
             int index = QoiColorHash(r, g, b, a);
-            if (history[index][0] == r && history[index][1] == g &&
-                history[index][2] == b && history[index][3] == a) {
+            bool index_match = (history[index][0] == r && history[index][1] == g &&
+                               history[index][2] == b && history[index][3] == a);
+
+            // Update history (every pixel gets added to history)
+            history[index][0] = r;
+            history[index][1] = g;
+            history[index][2] = b;
+            history[index][3] = a;
+
+            if (index_match) {
                 // Use QOI_OP_INDEX
                 uint8_t index_byte = QOI_OP_INDEX_TAG | index;
                 QoiWriteU8(index_byte);
-            } else {
-                // Update history
-                history[index][0] = r;
-                history[index][1] = g;
-                history[index][2] = b;
-                history[index][3] = a;
-
-                if (a == pre_a) {
+            } else if (a == pre_a) {
                     // Alpha is same, try QOI_OP_DIFF or QOI_OP_LUMA
                     int dr = static_cast<int>(r) - static_cast<int>(pre_r);
                     int dg = static_cast<int>(g) - static_cast<int>(pre_g);
@@ -153,7 +154,6 @@ bool QoiEncode(uint32_t width, uint32_t height, uint8_t channels, uint8_t colors
                     QoiWriteU8(a);
                 }
             }
-        }
 
         pre_r = r;
         pre_g = g;
