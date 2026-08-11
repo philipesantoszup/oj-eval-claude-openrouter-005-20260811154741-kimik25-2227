@@ -15,44 +15,6 @@ constexpr uint8_t QOI_MASK_2 = 0xc0;
 bool QoiEncode(uint32_t width, uint32_t height, uint8_t channels, uint8_t colorspace = 0);
 bool QoiDecode(uint32_t &width, uint32_t &height, uint8_t &channels, uint8_t &colorspace);
 
-static inline void qoi_encode_pixel(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
-                                    uint8_t pr, uint8_t pg, uint8_t pb, uint8_t pa,
-                                    uint8_t history[64][4]) {
-    int idx = QoiColorHash(r, g, b, a);
-    bool match = (history[idx][0] == r && history[idx][1] == g &&
-                  history[idx][2] == b && history[idx][3] == a);
-
-    history[idx][0] = r; history[idx][1] = g;
-    history[idx][2] = b; history[idx][3] = a;
-
-    if (match) {
-        QoiWriteU8(QOI_OP_INDEX_TAG | idx);
-    } else if (a == pa) {
-        int dr = (int)r - (int)pr;
-        int dg = (int)g - (int)pg;
-        int db = (int)b - (int)pb;
-        if (dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
-            QoiWriteU8(QOI_OP_DIFF_TAG | ((dr+2)<<4) | ((dg+2)<<2) | (db+2));
-        } else if (dg >= -32 && dg <= 31) {
-            int dr_dg = dr - dg;
-            int db_dg = db - dg;
-            if (dr_dg >= -8 && dr_dg <= 7 && db_dg >= -8 && db_dg <= 7) {
-                QoiWriteU8(QOI_OP_LUMA_TAG | (dg + 32));
-                QoiWriteU8(((dr_dg + 8) << 4) | (db_dg + 8));
-            } else {
-                QoiWriteU8(QOI_OP_RGB_TAG);
-                QoiWriteU8(r); QoiWriteU8(g); QoiWriteU8(b);
-            }
-        } else {
-            QoiWriteU8(QOI_OP_RGB_TAG);
-            QoiWriteU8(r); QoiWriteU8(g); QoiWriteU8(b);
-        }
-    } else {
-        QoiWriteU8(QOI_OP_RGBA_TAG);
-        QoiWriteU8(r); QoiWriteU8(g); QoiWriteU8(b); QoiWriteU8(a);
-    }
-}
-
 bool QoiEncode(uint32_t width, uint32_t height, uint8_t channels, uint8_t colorspace) {
     QoiWriteChar('q'); QoiWriteChar('o'); QoiWriteChar('i'); QoiWriteChar('f');
     QoiWriteU32(width);
@@ -81,18 +43,48 @@ bool QoiEncode(uint32_t width, uint32_t height, uint8_t channels, uint8_t colors
             }
         } else {
             if (run > 0) {
-                // Emit previous run
                 QoiWriteU8(QOI_OP_RUN_TAG | (run - 1));
                 run = 0;
             }
-            // Encode current pixel
-            qoi_encode_pixel(r, g, b, a, pr, pg, pb, pa, history);
+
+            int idx = QoiColorHash(r, g, b, a);
+            bool match = (history[idx][0] == r && history[idx][1] == g &&
+                         history[idx][2] == b && history[idx][3] == a);
+
+            history[idx][0] = r; history[idx][1] = g;
+            history[idx][2] = b; history[idx][3] = a;
+
+            if (match) {
+                QoiWriteU8(QOI_OP_INDEX_TAG | idx);
+            } else if (a == pa) {
+                int dr = (int)r - (int)pr;
+                int dg = (int)g - (int)pg;
+                int db = (int)b - (int)pb;
+                if (dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1) {
+                    QoiWriteU8(QOI_OP_DIFF_TAG | ((dr+2)<<4) | ((dg+2)<<2) | (db+2));
+                } else if (dg >= -32 && dg <= 31) {
+                    int dr_dg = dr - dg;
+                    int db_dg = db - dg;
+                    if (dr_dg >= -8 && dr_dg <= 7 && db_dg >= -8 && db_dg <= 7) {
+                        QoiWriteU8(QOI_OP_LUMA_TAG | (dg + 32));
+                        QoiWriteU8(((dr_dg + 8) << 4) | (db_dg + 8));
+                    } else {
+                        QoiWriteU8(QOI_OP_RGB_TAG);
+                        QoiWriteU8(r); QoiWriteU8(g); QoiWriteU8(b);
+                    }
+                } else {
+                    QoiWriteU8(QOI_OP_RGB_TAG);
+                    QoiWriteU8(r); QoiWriteU8(g); QoiWriteU8(b);
+                }
+            } else {
+                QoiWriteU8(QOI_OP_RGBA_TAG);
+                QoiWriteU8(r); QoiWriteU8(g); QoiWriteU8(b); QoiWriteU8(a);
+            }
         }
 
         pr = r; pg = g; pb = b; pa = a;
     }
 
-    // Handle run at end
     if (run > 0) {
         QoiWriteU8(QOI_OP_RUN_TAG | (run - 1));
     }
